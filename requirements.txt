@@ -1,12 +1,9 @@
+# Liste des dépendances nécessaires pour le projet
 
-
-Assurez-vous que `requirements.txt` contient toutes les dépendances nécessaires:
-
-```plaintext
-opencv-python
-numpy
-torch
-pandas
-requests
-pillow
-setuptools
+opencv-python  # Bibliothèque pour la vision par ordinateur
+numpy          # Bibliothèque pour les calculs numériques
+torch          # Bibliothèque pour le calcul scientifique et les modèles d'apprentissage profond
+pandas         # Bibliothèque pour la manipulation des données
+requests       # Bibliothèque pour faire des requêtes HTTP
+pillow         # Bibliothèque pour le traitement d'images
+setuptools     # Bibliothèque pour la distribution de paquets Python
