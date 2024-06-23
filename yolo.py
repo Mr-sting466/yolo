@@ -2,63 +2,78 @@ import cv2
 import numpy as np
 import torch
 
-class ObjectDetection:
-    def __init__(self, model_name='yolov5s'):
-        self.model = torch.hub.load('ultralytics/yolov5', model_name, pretrained=True)
-        self.classes = self.model.names
+class ObjectDetector:
+    def __init__(self, model_path, config_path, classes_file):
+        # Initialisation de la classe ObjectDetector
+        self.net = cv2.dnn.readNet(model_path, config_path)
+        self.classes = []
+        with open(classes_file, 'r') as f:
+            self.classes = [line.strip() for line in f.readlines()]
 
-    def access_camera(self):
-        cap = cv2.VideoCapture(0)  
+    def detect_objects(self, image):
+        # Préparation de l'image pour la détection
+        blob = cv2.dnn.blobFromImage(image, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+        self.net.setInput(blob)
+        outs = self.net.forward(self.get_output_layers())
+        class_ids, confidences, boxes = self.post_process(image, outs)
+        return class_ids, confidences, boxes
 
-        if not cap.isOpened():
-            print("Erreur d'ouverture de la webcam")
-            return
+    def get_output_layers(self):
+        # Récupération des noms des couches de sortie
+        layer_names = self.net.getLayerNames()
+        output_layers = [layer_names[i - 1] for i in self.net.getUnconnectedOutLayers()]
+        return output_layers
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            # Détection d'objets avec YOLOv5
-            results = self.model(frame)
-
-            # Annoter les résultats sur les images avec code couleur
-            frame = self.annotate_frame(frame, results)
-
-            # Afficher les FPS
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-
-            # Afficher les images
-            cv2.imshow('Web Camera', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-    def get_color(self, class_id):
-        # Palette de couleurs
-        palette = [
-            (255, 0, 0), (0, 255, 0), (0, 0, 255),
-            (255, 255, 0), (0, 255, 255), (255, 0, 255),
-            (128, 0, 0), (0, 128, 0), (0, 0, 128),
-            (128, 128, 0), (0, 128, 128), (128, 0, 128)
-        ]
-        return palette[class_id % len(palette)]
-
-    def annotate_frame(self, frame, results):
-        for bbox in results.xyxy[0].numpy():
-            x1, y1, x2, y2, conf, cls = bbox
-            label = f"{self.classes[int(cls)]} {conf:.2f}"
-            color = self.get_color(int(cls))
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            cv2.putText(frame, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-        return frame
+    def post_process(self, image, outs):
+        # Traitement des résultats de la détection
+        Width = image.shape[1]
+        Height = image.shape[0]
+        class_ids = []
+        confidences = []
+        boxes = []
+        
+        for out in outs:
+            for detection in out:
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+                if confidence > 0.5:  # Seulement les détections avec une confiance suffisante
+                    center_x = int(detection[0] * Width)
+                    center_y = int(detection[1] * Height)
+                    w = int(detection[2] * Width)
+                    h = int(detection[3] * Height)
+                    x = center_x - w / 2
+                    y = center_y - h / 2
+                    class_ids.append(class_id)
+                    confidences.append(float(confidence))
+                    boxes.append([x, y, w, h])
+        
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        final_boxes = [boxes[i[0]] for i in indices]
+        final_class_ids = [class_ids[i[0]] for i in indices]
+        final_confidences = [confidences[i[0]] for i in indices]
+        
+        return final_class_ids, final_confidences, final_boxes
 
 def main():
-    detector = ObjectDetection()
-    detector.access_camera()
+    # Exemple d'utilisation de la classe ObjectDetector
+    model_path = 'yolov3.weights'
+    config_path = 'yolov3.cfg'
+    classes_file = 'coco.names'
 
-if __name__ == "__main__":
+    detector = ObjectDetector(model_path, config_path, classes_file)
+    
+    image = cv2.imread('test_image.jpg')
+    class_ids, confidences, boxes = detector.detect_objects(image)
+
+    for class_id, confidence, box in zip(class_ids, confidences, boxes):
+        label = str(detector.classes[class_id])
+        cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[0] + box[2]), int(box[1] + box[3])), (0, 255, 0), 2)
+        cv2.putText(image, f'{label} {confidence:.2f}', (int(box[0]), int(box[1] - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    
+    cv2.imshow('Object Detection', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+if __name__ == '__main__':
     main()
